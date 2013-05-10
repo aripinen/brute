@@ -1,15 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
+#define __USE_GNU
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <crypt.h>
 #include <sched.h>
-#define _GNU_SOURCE
+#include <sched.h>
 #define MAXLENGTH 30
 #define ALPHSTRING "stic"
-typedef char password_t[MAXLENGTH];
+typedef char result_t[MAXLENGTH];
 
 typedef enum run_mode_t{
   RM_REC,
@@ -18,7 +19,7 @@ typedef enum run_mode_t{
 
 typedef struct task_t{
   char hash[20];
-  password_t pass;
+  result_t pass;
 } task_t; 
 
 typedef struct context_t{
@@ -26,7 +27,7 @@ typedef struct context_t{
   char *hash;
   int alphLength;
   int length;
-  password_t result;
+  result_t result;
   enum run_mode_t run_mode;
 } context_t;
 
@@ -38,22 +39,18 @@ typedef struct queue_t{
   sem_t full_sem,empty_sem;
   } queue_t;
 queue_t queue;
-password_t password;
+result_t password;
 
 void queue_push(queue_t *queue,task_t *task){
-  sem_wait(&queue->empty_sem);
-  pthread_mutex_lock(&queue->tail_mutex);
+  sem_wait(&(queue->empty_sem));
+  pthread_mutex_lock(&(queue->tail_mutex));
   queue->task[queue->tail]=*task;
   int i;
-  for (i=queue->head;i<=queue->tail;i++)
-  // printf("%s ",queue->task[i].pass);
-  printf("%s ",task->pass);
-  printf("\n");
   queue->tail++;
   if (queue->tail==sizeof(queue->task)/sizeof(queue->task[0]))
     queue->tail=0;
-  pthread_mutex_unlock(&queue->tail_mutex);
-  sem_post(&queue->full_sem);
+  pthread_mutex_unlock(&(queue->tail_mutex));
+  sem_post(&(queue->full_sem));
 }
 
 void queue_init(queue_t *queue){
@@ -67,18 +64,18 @@ void queue_init(queue_t *queue){
 
 task_t queue_pop(queue_t *queue){
   task_t task;
-  sem_wait(&queue->full_sem);
-  pthread_mutex_lock(&queue->head_mutex);
+  sem_wait(&(queue->full_sem));
+  pthread_mutex_lock(&(queue->head_mutex));
   task=queue->task[queue->head];
-  if (task.pass==NULL){
+  if (strcmp(task.pass,"")==0){
       queue_push(queue,&task);
       pthread_exit(0);
     }
   queue->head++;
   if (queue->head==sizeof(queue->task)/sizeof(queue->task[0]))
     queue->head=0;
-  pthread_mutex_unlock(&queue->head_mutex);
-  sem_post(&queue->empty_sem);
+  pthread_mutex_unlock(&(queue->head_mutex));
+  sem_post(&(queue->empty_sem));
   return task;
 }
 
@@ -90,10 +87,12 @@ enum run_mode_t process_args(int argc,char **argv){
   }
 }
 
-int equelsHash(task_t *task){ 
-  //if (strcmp(task->hash, crypt(task->pass,task->hash))==0)
+int equelsHash(task_t *task){
+    struct crypt_data data;
+    data.initialized=0; 
+    if (strcmp(task->hash, crypt_r(task->pass,task->hash,&data))==0)
     return 1;
-    // else return 0;
+    else return 0;
     }
 
 void brute_rec(context_t *context, int count){
@@ -124,17 +123,16 @@ void brute_iter(context_t *context, int *countMassive){
        context->result[i]=context->alph[countMassive[i]];
      }
      else{
-        task_t *task=(task_t*)malloc(sizeof(task_t));
-	if (password!=NULL){
+       task_t *task=(task_t*)malloc(sizeof(task_t));
+       if (strcmp(password,"")!=0){
 	 queue_push(&queue,task);
 	 break;
-        }
-     	context->result[0]=context->alph[countMassive[0]];
-      	countMassive[0]++;
-       	context->result[context->length]='\0';
-	printf("%s\n",context->result);
-        memcpy(task->pass,context->result,context->length);
-       //printf("%s\n",task->hash);
+       }
+       context->result[0]=context->alph[countMassive[0]];
+       countMassive[0]++;
+       context->result[context->length]='\0';
+	memcpy(task->pass,context->result,context->length);
+	memcpy(task->hash,context->hash,20);
        queue_push(&queue,task);
      }
   }
@@ -143,12 +141,11 @@ void brute_iter(context_t *context, int *countMassive){
 void *thread_consumer(void *arg){
   context_t *context=(context_t*) arg;
   while(1){
-    task_t *task;
-    *task=queue_pop(&queue);
+    task_t task;
+    task=queue_pop(&queue);
     if(equelsHash(&task)){
-      strncpy(password,&task->pass,&context->length);
+      memcpy(password,task.pass,context->length);
       }
-    free(task);
   }
   pthread_exit(0);
 }
@@ -187,8 +184,7 @@ int main(int argc, char *argv[]){
   for (i=0;i<nProcess;i++)
     pthread_create(&threadIdCons[i],NULL,&thread_consumer,&context);
   pthread_join(threadIdProd,NULL);
-   for (i=0;i<nProcess;i++)
-   pthread_cancel(&threadIdCons[i]);
+  printf("pass %s\n",password);
   return 0;
 }
 
