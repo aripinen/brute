@@ -58,7 +58,7 @@ int queue_push(task_t *task, context_t *context){
 	pthread_mutex_lock(&(context->queue.tail_mutex));
 	context->queue.task[context->queue.tail]=*task;
 	context->queue.tail++;
-	if (context->queue.tail==sizeof(context->queue.task)/sizeof(context->queue.task[0]))
+	if (context->queue.tail == sizeof(context->queue.task) / sizeof(context->queue.task[0]))
 		context->queue.tail=0;
 	pthread_mutex_unlock(&(context->queue.tail_mutex));
 	sem_post(&(context->queue.full_sem));
@@ -70,41 +70,41 @@ void queue_init(context_t *context){
 	context->queue.head=0;
 	pthread_mutex_init(&context->queue.tail_mutex,NULL);
 	pthread_mutex_init(&context->queue.head_mutex,NULL);
-	sem_init(&context->queue.full_sem,0,0);
-	sem_init(&context->queue.empty_sem,0,sizeof(context->queue.task)/sizeof(context->queue.task[0]));
+	sem_init(&context->queue.full_sem, 0, 0);
+	sem_init(&context->queue.empty_sem, 0, sizeof(context->queue.task) / sizeof(context->queue.task[0]));
 }
 
 task_t queue_pop(context_t *context){
 	task_t task;
 	sem_wait(&(context->queue.full_sem));
 	pthread_mutex_lock(&(context->queue.head_mutex));
-	task=context->queue.task[context->queue.head];
-	if (strcmp(task.pass,"")==0){
+	task = context->queue.task[context->queue.head];
+	if (strcmp(task.pass, "") == 0){
 		queue_push(&task, context);
 		pthread_mutex_unlock(&(context->queue.head_mutex));
 		sem_post(&(context->queue.empty_sem));
 		pthread_exit(0);
 	}
 	context->queue.head++;
-	if (context->queue.head==sizeof(context->queue.task)/sizeof(context->queue.task[0]))
+	if (context->queue.head == sizeof(context->queue.task) / sizeof(context->queue.task[0]))
 		context->queue.head=0;
 	pthread_mutex_unlock(&(context->queue.head_mutex));
 	sem_post(&(context->queue.empty_sem));
 	return task;
 }
 
-void process_args(int argc,char **argv,context_t *context){
-	int c=getopt(argc,argv,"rism");
-	while(c!=-1){
+void process_args(int argc,char **argv, context_t *context){
+	int c=getopt(argc, argv, "rism");
+	while(c != -1){
 		switch (c){
-			case 'r': context->brute_mode =BM_REC;break;
+			case 'r': context->brute_mode = BM_REC;break;
 			case 'i': context->brute_mode = BM_ITER;break;
 			case 's': context->run_mode = RM_SINGLE;break;
 			case 'm': context->run_mode = RM_MULTI; break;
   		}
-		c=getopt(argc,argv,"rism");
+		c=getopt(argc, argv, "rism");
 	}
-	context->hash=argv[optind];
+	context->hash = argv[optind];
 }
 
 int equelsHash(task_t *task, context_t *context){
@@ -124,12 +124,12 @@ int check_run_mode(context_t *context){
 	};
 }
 
-void brute_rec(context_t *context,task_t *task, int count, int (*prob)(struct task_t*, struct context_t*)){
-	if (count<context->length && context->complete == 0){
+void brute_rec(context_t *context, task_t *task, int count, int (*prob)(struct task_t*, struct context_t*)){
+	if ((count < context->length) && (context->complete == 0)){
 		int i;
-		for(i=0;i<context->alphLength;i++){
-			task->pass[count]=context->alph[i];
-			if (count==task->to - 1)
+		for(i = 0; i < context->alphLength; i++){
+			task->pass[count] = context->alph[i];
+			if (count == task->to - 1)
 			{
 				if ((int)prob(task, context) == 1) 
 				{
@@ -137,7 +137,7 @@ void brute_rec(context_t *context,task_t *task, int count, int (*prob)(struct ta
 					break;
 				}
 			}	
-			else brute_rec(context, task, count+1, prob);
+			else brute_rec(context, task, count + 1, prob);
 		}
   	}
 }
@@ -159,8 +159,8 @@ void brute_iter(context_t *context, task_t *task, int (*prob)(struct task_t*, st
 			task->pass[i] = context->alph[context->countMassive[i]];
 		}
 		else{
-			task->pass[task->to-1]=context->alph[context->countMassive[task->to-1]];
-			context->countMassive[task->to-1]++;
+			task->pass[task->to - 1] = context->alph[context->countMassive[task->to - 1]];
+			context->countMassive[task->to - 1]++;
 			if ((int) prob(task, context) == 1) 
 			{
 				memcpy(context->password, task->pass, context->length+1);
@@ -193,11 +193,11 @@ void thread_creater(context_t *context, pthread_t threadIdCons[])
 void thread_closer (context_t *context,  pthread_t threadIdCons[])
 {
 	int i;
-	task_t *final_task=(task_t*)malloc(sizeof(task_t));
-	memcpy(final_task->pass,"",1);
+	task_t *final_task = (task_t*)malloc(sizeof(task_t));
+	memcpy(final_task->pass, "", 1);
 	queue_push(final_task, context);
-	for (i=0;i<sizeof(*threadIdCons) / sizeof(int);i++)
-		pthread_join(threadIdCons[i],NULL);
+	for (i = 0;i < sizeof(*threadIdCons) / sizeof(int);i++)
+		pthread_join(threadIdCons[i], NULL);
 }
 
 void producer(context_t *context)
@@ -242,13 +242,13 @@ void producer(context_t *context)
 
 int main(int argc, char *argv[]){
 	context_t context;
-	context.data_single.initialized=0;
-	context.alph=ALPHSTRING;
-	context.alphLength=strlen(context.alph);
-	context.length=LENGTH;
-	context.complete=0;	
+	context.data_single.initialized = 0;
+	context.alph = ALPHSTRING;
+	context.alphLength = strlen(context.alph);
+	context.length = LENGTH;
+	context.complete = 0;	
 	queue_init(&context);
-	process_args(argc,argv,&context);
+	process_args(argc, argv, &context);
 	producer(&context);
 	if (context.complete == 0)
 		printf("password not found\n");
