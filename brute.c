@@ -127,10 +127,16 @@ void queue_pop (queue_t * queue, task_t * task)
      return 0;
 }
 
+int queue_push_transform(task_t *task, context_t *context, struct crypt_data * data_single)
+{
+  queue_push(task, &context->queue, data_single);
+  return 0;
+}
+
 int brute_rec (context_t *context, task_t *task, int count, struct crypt_data * data_single,
 	       int (*prob)(struct task_t*, struct context_t*, struct crypt_data*))
 {
-  if (count >= task->to - 1)
+  if (count >= task->to)
     {
       if (prob (task, context, data_single)) 
 	{
@@ -141,6 +147,7 @@ int brute_rec (context_t *context, task_t *task, int count, struct crypt_data * 
   else
     {
       int i;
+
       for(i = 0; i < context->alph_length; i++)
 	{
 	  task->pass[count] = context->alph[i];
@@ -162,13 +169,18 @@ void brute_iter(context_t *context, task_t *task, struct crypt_data * data_singl
 
   for (;;) {
     if (prob (task, context, data_single))
-      break;
+      {
+	memcpy (context->password, task->pass, context->length);
+	break;
+      }
+
     for (i = task->to - 1; (i >= task->from) && (count_massive[i] >= context->alph_length -1); --i)
       {
 	count_massive[i] = 0;
 	task->pass[i] = context->alph[0];
       }
-    if (i < task->from)
+
+    if (i < task->from || context->complete)
       break;
     task->pass[i] = context->alph[++count_massive[i]];
   }
@@ -182,75 +194,78 @@ void *thread_consumer(void *arg)
   task_t task;
   while(1)
     {
-      task = queue_pop (&context->queue, &task);
+      queue_pop (&context->queue, &task);
+      if (strcmp(task.pass, "") == 0)
+       {
+	 queue_push(&task, &context->queue, &data_single);
+	 return 0;
+       }
       task.from = task.to;
       task.to = context->length;
-      brute_iter(context, &task, data_single, &equels_hash);
-      if (context->complete)
-	return;
+      brute_iter(context, &task, &data_single, &equels_hash);
     } 
 }
 
-void thread_creater (context_t *context, pthread_t threadIdCons[], int count)
+void brute_single(context_t *context, task_t *task)
 {
-  int i;
-  for(i = 0; i < count; i++)
-    pthread_create(&threadIdCons[i], NULL, &thread_consumer, context);
+  task->from = 0;
+  task->to = context->length;
+  struct crypt_data data_single;
+  data_single.initialized = 0;
+  
+  if (context->brute_mode == BM_REC)
+    brute_rec(context, task, 0, &data_single, &equels_hash);
+  else
+    brute_iter(context, task, &data_single, &equels_hash);
 }
 
-void thread_closer (context_t *context,  pthread_t threadIdCons[], int count)
+void brute_multi(context_t *context, task_t *task)
 {
-  int i;
+  task->from = 0;
+  task->to = context->length - 2;
+  struct crypt_data data_single;
+  data_single.initialized = 0;
+  int i, nProcess = sysconf(_SC_NPROCESSORS_CONF);
+  pthread_t threadIdCons[nProcess];
+
+  for(i = 0; i < nProcess; i++)
+    pthread_create(&threadIdCons[i], NULL, &thread_consumer, context);
+
+  if (context->brute_mode == BM_REC)
+    brute_rec(context, task, 0, &data_single, &queue_push_transform);
+  else
+    brute_iter(context, task, &data_single, &queue_push_transform);
   task_t final_task;
-  struct
   strcpy (final_task.pass, "");
-  queue_push (&final_task, context, data_single);
-  for (i = 0; i < count; i++)
+  final_task.from = context->length + 1;
+  queue_push (&final_task, &context->queue, &data_single);
+  
+  for (i = 0; i < nProcess; i++)
     pthread_join (threadIdCons[i], NULL);
 }
 
 void producer(context_t *context)
 {
   task_t task;
-  task.from = 0;
-  int j, nProcess = sysconf(_SC_NPROCESSORS_CONF);
-  pthread_t threadIdCons[nProcess];
-
-  for (j = 0; j < context->length; j++)
-    task.pass[j] = context->alph[0];
+  int i;
+  for (i = 0; i < context->length; i++)
+    task.pass[i] = context->alph[0];
   task.pass[context->length] = '\0';
-
-  switch(context->brute_mode)
-    {
-    case BM_REC:
-      if (check_run_mode(context) == 1)
-	{
-	  brute_rec(context, &task, 0, &queue_push);
-	  thread_closer(context, threadIdCons);
-	}
-      else 
-	brute_rec(context, &task, 0, &equelsHash);
-      break;
-    case BM_ITER:
-      if (check_run_mode(context) == 1)
-	{
-	  brute_iter(context, &task, &queue_push);
-	  thread_closer(context, threadIdCons);
-	}
-      else 
-	brute_iter(context, &task, &equelsHash);
-      break;
-    }
+  if (context->run_mode == RM_SINGLE)
+    brute_single(context, &task);
+  else 
+    brute_multi(context, &task);
 }
 
 int main(int argc, char *argv[])
 {
-  context_t context;
-  context.alph = ALPHSTRING;
-  context.alphLength = strlen(context.alph);
-  context.length = LENGTH;
-  context.complete = 0;	
-  queue_init(&context);
+  context_t context = {
+  .alph = ALPHSTRING,
+  .complete = 0,
+  .length = 4,
+  };
+  context.alph_length = strlen(context.alph);
+  queue_init(&context.queue);
   process_args(argc, argv, &context);
   producer(&context);
   if (context.complete == 0)
